@@ -1,0 +1,160 @@
+#! /bin/sh
+
+# as it turns out, finding C dependencies is still a pain, but autotools don't
+# have zig support, and probably never will
+
+#### TODO ####
+## rewrite in zig
+## integrate with "zig build"?
+
+# shellcheck disable=SC2086
+
+zig='zig'
+test -n "${ZIG}" && zig="${ZIG}"
+
+zig_args="${ZIG_FLAGS}"
+zig_libs="${ZIG_LDFLAGS}"
+
+config_file="config.zig"
+
+error() {
+    printf '%s\n' "${@}"
+    exit 1
+}
+
+init() {
+    :>"${config_file}"
+}
+
+fini() {
+    printf '#! /bin/sh\n%s build-exe %s "${1}" -femit-bin="${2}" %s\n' \
+           "${zig}" \
+           "${zig_args}" \
+           "${zig_libs}" \
+           >./.compile
+    chmod a+x .compile
+    printf '%s\n' 'configuration done!' 'run make to build' >&2
+
+    # fucking zig compiler can't clean up after itself
+    for i in *.o; do unlink "${i}"; done
+
+    exit 0
+}
+
+____() {
+    printf '%s\n' ''
+}
+
+# no args
+# give program on stdin
+try_link() {
+    f="$(mktemp 'try_link_XXXXXXX.zig')" || exit 1
+    cat >"${f}"
+    c="$(mktemp 'try_link_output_XXXXXXX')" || exit 1
+
+    ret='1'
+
+    ${zig} build-exe ${zig_args} "${f}" ${zig_libs} -femit-bin="${c}" && ret='0'
+
+    unlink "${f}"
+    unlink "${c}"
+
+    return "${ret}"
+}
+
+# no args
+# give program on stdin
+try_compile() {
+    f="$(mktemp 'try_link_XXXXXXX.zig')" || exit 1
+    cat >"${f}"
+    c="$(mktemp 'try_link_output_XXXXXXX')" || exit 1
+
+    ret='1'
+
+    ${zig} build-obj ${zig_args} "${f}" ${zig_libs} -femit-bin="${c}" && ret='0'
+
+    unlink "${f}"
+    unlink "${c}"
+
+    return "${ret}"
+
+}
+
+# <symbol> <library>
+find_lib() {
+    printf 'checking for %s in -l%s... ' "${1}" "${2}" >&2
+
+    old_zig_libs="${zig_libs}"
+    zig_libs="${zig_libs} -l${2}"
+
+    r=0
+    if printf 'extern fn %s() void;pub fn main() void {%s();}' "${1}" "${1}" |
+            try_link >/dev/null 2>&1; then
+        printf '%s\n' 'yes' >&2
+    else
+        printf 'no\n' >&2
+        zig_libs="${old_zig_libs}"
+        r=1
+    fi
+
+    return "${r}"
+}
+
+# <name> <value>
+define() {
+    test -n "${1}" &&
+        printf 'pub const %s = %s;\n' "${1}" "${2}" >>"${config_file}"
+}
+
+# <symbol> <libraries> <define>
+find_libs() {
+    for lib in ${2}; do
+        find_lib "${1}" "${lib}" && {
+            define "${3}" 'true'
+            return 0
+        }
+    done
+    define "${3}" 'false'
+    return 1
+}
+
+# <decl> <header>
+find_decl() {
+    printf 'checking for %s in <%s>... ' "${1}" "${2}" >&2
+
+    r=0
+    if printf 'comptime{if(!@hasDecl(@cImport(@cInclude("%s")), "%s")) @compileError("");}' "${2}" "${1}" |
+            try_compile >/dev/null 2>&1; then
+        printf '%s\n' 'yes' >&2
+    else
+        printf 'no\n' >&2
+        r=1
+    fi
+
+    return "${r}"
+}
+
+# <decl> <headers> <define>
+find_decls() {
+    for header in ${2}; do
+        find_decl "${1}" "${header}" && {
+            define "${3}" "\"${header}\""
+            return 0
+        }
+    done
+    return 1
+}
+
+init
+
+find_libs malloc c
+____
+find_lib WebPDecodeRGB webp || error 'need webp'
+find_lib WebPAnimDecoderHasMoreFrames webpdemux || error 'need webp'
+find_decls WebPDecodeRGB webp/decode.h webp_decode_include || error 'need webp'
+find_decls WebPAnimDecoderNew webp/demux.h webp_demux_include || error 'need webp'
+____
+find_libs deflate 'z zlib' || error 'need zlib'
+find_decl deflate zlib.h || error 'need zlib'
+____
+fini
