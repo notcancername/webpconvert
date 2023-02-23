@@ -1,8 +1,8 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const c = @cImport({
-    @cInclude(@import("config.zig").webp_decode_include);
-    @cInclude(@import("config.zig").webp_demux_include);
+    @cInclude("webp/decode.h");
+    @cInclude("webp/demux.h");
 });
 
 // At runtime, these would be sins of the highest order, but comptime makes this
