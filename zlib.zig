@@ -1,8 +1,11 @@
 const std = @import("std");
 const c = @cImport(@cInclude("zlib.h"));
 
+// XXX: for error handling, adopt the same strategy as webp.zig
+
 pub const DeflateState = struct {
-    const buf_size = @as(usize, 64) << 10;
+    // XXX: make this customizable
+    const buf_size = @as(usize, 8) << 10;
 
     st: c.z_stream = undefined,
 
@@ -21,6 +24,7 @@ pub const DeflateState = struct {
         var out_buf: [buf_size]u8 = undefined;
         var eof: bool = false;
         var ret: c_int = c.Z_OK;
+        // XXX: inelegant
         while(true) {
             ds.st.avail_in = @intCast(c_uint, try reader.readAll(&in_buf));
             if(ds.st.avail_in < buf_size) eof = true;
@@ -40,6 +44,7 @@ pub const DeflateState = struct {
         }
     }
 
+    // XXX: maybe separate "end" and "deinit"
     pub fn end(ds: *DeflateState, writer: anytype) !void {
         var out_buf: [buf_size]u8 = undefined;
         ds.st.next_out = @ptrCast([*]u8, &out_buf);

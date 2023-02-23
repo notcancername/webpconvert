@@ -68,6 +68,7 @@ test "tryWebp" {
         return error.No;
 }
 
+// XXX: not sure if I like this
 pub const Frame = struct {
     data: []u8,
     timestamp_ms: u64,
@@ -82,6 +83,7 @@ pub const Frame = struct {
 
 pub const DecodeState = struct {
     dec: *c.WebPAnimDecoder,
+    // XXX: all of these should be separate
     width: u14,
     height: u14,
     frame_len: usize,
@@ -131,7 +133,6 @@ pub const DecodeState = struct {
         return s;
     }
 
-    /// Return is callee-owned.
     pub fn next(state: *DecodeState) !?Frame {
         if(c.WebPAnimDecoderHasMoreFrames(state.dec) != 0) {
             var buf: [*]u8 = undefined;
@@ -148,31 +149,3 @@ pub const DecodeState = struct {
         state.* = undefined;
     }
 };
-
-const FramesWithInfo = struct{
-    rows: u16,
-    cols: u16,
-    frames: []Frame,
-
-    pub fn deinit(frames: FramesWithInfo, allocator: std.mem.Allocator) void {
-        for(frames.frames) |frame| allocator.free(frame.data);
-        allocator.free(frames.frames);
-    }
-};
-
-pub fn decodeAll(
-    data: []const u8,
-    allocator: std.mem.Allocator,
-    colorspace: DecodeState.Colorspace,
-) !FramesWithInfo {
-    var dec = try DecodeState.init(data, true, colorspace);
-    defer dec.deinit();
-
-    var frames = try allocator.alloc(Frame, dec.nb_frames);
-    var idx: usize = 0;
-
-    while(try dec.next()) |frame| : (idx += 1)
-        frames[idx] = try frame.dup(allocator);
-
-    return FramesWithInfo{.cols = dec.width, .rows = dec.height, .frames = frames};
-}

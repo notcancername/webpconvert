@@ -14,9 +14,8 @@ fn calculateCrc(data: []const u8) u32 {
     return c.hash(data);
 }
 
-
+// I'm fine leaving this as-is.
 pub const Chunk = struct {
-    // this is good
     typ: [4]u8,
     data: []u8,
     crc: u32,
@@ -218,8 +217,8 @@ pub const EncodeState = struct {
         nb_plays: u32,
     ) !EncodeState {
         try writer.writeIntBig(u64, pnghdr);
-
         var buf: [13]u8 = undefined;
+        // XXX: find a nicer way to do this
         var c = Chunk{.typ = "IHDR".*, .data = &buf, .crc = undefined};
         std.mem.writeIntBig(u32, buf[0..4], fi.width);
         std.mem.writeIntBig(u32, buf[4..8], fi.height);
@@ -254,6 +253,7 @@ pub const EncodeState = struct {
         duration: util.Rational(u16)
     ) !void {
         var ds: zlib.DeflateState = undefined;
+        // XXX: make this customizable
         try ds.init(null);
         const al_wr = state.comp_buf.writer();
         var buf: [26]u8 = undefined;
@@ -268,6 +268,7 @@ pub const EncodeState = struct {
         buf[25] = 0;
         c.checksum();
         try c.write(writer);
+        // XXX: this seems fine for now, but needs some kind of improvement
         if(state.seq != 0) {
             c.typ = "fdAT".*;
             var b: [4]u8 = undefined;
@@ -275,8 +276,11 @@ pub const EncodeState = struct {
             try state.comp_buf.insertSlice(0, &b);
         } else c.typ = "IDAT".*;
         {
+            // XXX: the fact that we're doing this row-wise means we're calling
+            // deflate a lot. consider adding frame-wise approach
             var it = state.fi.scanlineIterator(frame);
             while(it.next()) |scanline| {
+                // XXX: this whole thing is not satisfying
                 var null_fbs = std.io.fixedBufferStream("\x00");
                 const null_r = null_fbs.reader();
                 var scanline_fbs = std.io.fixedBufferStream(scanline);
